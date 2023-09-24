@@ -607,7 +607,8 @@ ProcessGroupNCCL::ProcessGroupNCCL(
     const c10::intrusive_ptr<Store>& store,
     int rank,
     int size,
-    c10::intrusive_ptr<Options> options)
+    c10::intrusive_ptr<Options> options,
+    std::vector<int> global_ranks)
     : Backend(rank, size),
       store_(store),
       options_(options),
@@ -615,6 +616,13 @@ ProcessGroupNCCL::ProcessGroupNCCL(
       traceKeyStart_(getTraceStartKey("NCCL", rank)),
       traceKeyEnd_(getTraceEndKey("NCCL", rank)),
       terminateProcessGroup_(false) {
+  std::cerr << getpid() <<  ": pytorch creating process group nccl with rank: " << rank << " size: " << size << std::endl;
+  if (global_ranks.size() > 0) {
+     std::cout << getpid() << ": pytorch global_ranks vector size: " << global_ranks.size() << " first: " << global_ranks[0] << " last: " << global_ranks[global_ranks.size() - 1] << std::endl;
+  } else {
+     std::cout << getpid() << ": pytorch global_ranks vector is empty" << std::endl;
+  }
+
   TORCH_CHECK(
       at::cuda::getNumGPUs() != 0,
       "ProcessGroupNCCL is only supported with GPUs, no GPUs found!");

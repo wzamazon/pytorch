@@ -991,7 +991,7 @@ def _new_process_group_helper(
                 pg_options.is_high_priority_stream = False
                 pg_options._timeout = timeout
 
-            backend_class = ProcessGroupNCCL(backend_prefix_store, group_rank, group_size, pg_options)
+            backend_class = ProcessGroupNCCL(backend_prefix_store, group_rank, group_size, pg_options, global_ranks_in_group)
             backend_type = ProcessGroup.BackendType.NCCL
         elif backend_str == Backend.UCC and is_ucc_available():
             # TODO: once UCC plugin is fully deprecated, remove

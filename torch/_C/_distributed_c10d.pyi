@@ -404,6 +404,7 @@ class ProcessGroupNCCL(ProcessGroup):
         rank: int,
         size: int,
         timeout: timedelta,
+        global_ranks_in_group: List[int],
     ): ...
     @staticmethod
     def _group_start() -> None: ...
