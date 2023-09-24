@@ -278,7 +278,8 @@ class TORCH_API ProcessGroupNCCL : public Backend {
       const c10::intrusive_ptr<Store>& store,
       int rank,
       int size,
-      c10::intrusive_ptr<Options> options = Options::create());
+      c10::intrusive_ptr<Options> options = Options::create(),
+      std::vector<int> global_ranks = std::vector<int>());
 
   // This constructor includes the deprecated `groupName` argument.
   // If you have existing code that uses the `groupName`, you can replace
