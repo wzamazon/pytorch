@@ -615,7 +615,8 @@ ProcessGroupNCCL::ProcessGroupNCCL(
       ncclCommCounter_(0),
       traceKeyStart_(getTraceStartKey("NCCL", rank)),
       traceKeyEnd_(getTraceEndKey("NCCL", rank)),
-      terminateProcessGroup_(false) {
+      terminateProcessGroup_(false),
+      global_ranks_(global_ranks) {
   if (global_ranks.size() > 0) {
       std::cerr << getpid() << ": pytorch creating process group nccl with rank: " << rank << " size: " << size << std::endl;
       std::ostringstream oss;
@@ -1274,7 +1275,7 @@ std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::getNCCLComm(
     int deviceIndex = devices[i].index();
 
     gpuGuard.set_index(deviceIndex);
-    ncclComms[i] = NCCLComm::create(numRanks, rank, ncclID);
+    ncclComms[i] = NCCLComm::create(numRanks, rank, ncclID, global_ranks_);
 
     // Creates the NCCL streams
     streamVal.push_back(

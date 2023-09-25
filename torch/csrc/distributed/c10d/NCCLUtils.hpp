@@ -11,7 +11,7 @@
 #include <nccl.h>
 #include <c10/util/Exception.h>
 #include <c10/util/Optional.h>
-
+#include <vector>
 // ncclGetLastError() is enabled only for NCCL versions 2.13+
 // ncclRemoteError only exists in NCCL versions 2.13+
 #if defined(NCCL_MAJOR) && (NCCL_MAJOR == 2) && defined(NCCL_MINOR) && \
@@ -86,7 +86,7 @@ std::string getNcclErrorDetailStr(
   ncclResult_t error,
   c10::optional<std::string> processGroupFailureReason = c10::nullopt);
 
-void** get_global_conn_data();
+void** getGlobalConnData();
 
 // RAII wrapper for NCCL communicator
 class NCCLComm {
@@ -119,17 +119,17 @@ class NCCLComm {
       int numRanks,
       int rank,
       ncclUniqueId commId,
-      const vector<int>& global_ranks) {
+      const std::vector<int>& globalRanks) {
     auto comm = std::make_shared<NCCLComm>();
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-    void** global_conn_data = get_global_conn_data();
+    void** globalConnData = getGlobalConnData();
     
-    if (global_ranks.size() == 0) {
-        config.connData = global_conn_data;
+    if (globalRanks.size() == 0) {
+        config.connData = globalConnData;
     } else {
-        void** conn_data = (void**)malloc(glob_ranks.size() * sizeof(void*));
-	for (auto i = 0; i < global_ranks.size(); ++i) {
-            conn_data[i] = global_conn_data[global_ranks[i]];
+        void** conn_data = (void**)malloc(globalRanks.size() * sizeof(void*));
+	for (auto i = 0LLU; i < globalRanks.size(); ++i) {
+            conn_data[i] = globalConnData[globalRanks[i]];
 	}
 
 	config.connData = conn_data;
