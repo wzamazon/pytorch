@@ -616,11 +616,17 @@ ProcessGroupNCCL::ProcessGroupNCCL(
       traceKeyStart_(getTraceStartKey("NCCL", rank)),
       traceKeyEnd_(getTraceEndKey("NCCL", rank)),
       terminateProcessGroup_(false) {
-  std::cerr << getpid() <<  ": pytorch creating process group nccl with rank: " << rank << " size: " << size << std::endl;
   if (global_ranks.size() > 0) {
-     std::cout << getpid() << ": pytorch global_ranks vector size: " << global_ranks.size() << " first: " << global_ranks[0] << " last: " << global_ranks[global_ranks.size() - 1] << std::endl;
+      std::cerr << getpid() << ": pytorch creating process group nccl with rank: " << rank << " size: " << size << std::endl;
+      std::ostringstream oss;
+      oss << getpid() << ": pytorch global_ranks vector size: " << global_ranks.size() << " value:";
+      for (auto i=global_ranks.begin(); i != global_ranks.end(); ++i) {
+          oss << " " << *i;
+      }
+      std::cerr << oss.str() << std::endl;
   } else {
-     std::cout << getpid() << ": pytorch global_ranks vector is empty" << std::endl;
+     std::cerr << getpid() << ": pytorch creating process group nccl with rank: " << rank << " size: " << size << std::endl;
+     std::cerr << getpid() << ": pytorch global_ranks vector is empty" << std::endl;
   }
 
   TORCH_CHECK(
