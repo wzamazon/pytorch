@@ -2054,7 +2054,8 @@ options :class:`~torch.distributed.ProcessGroupNCCL.Options`).
                   const c10::intrusive_ptr<::c10d::Store>&,
                   int,
                   int,
-                  c10::intrusive_ptr<::c10d::ProcessGroupNCCL::Options>>(),
+                  c10::intrusive_ptr<::c10d::ProcessGroupNCCL::Options>,
+		  std::vector<int>>(),
               py::call_guard<py::gil_scoped_release>())
           .def(
               py::init([](const c10::intrusive_ptr<::c10d::Store>& store,
