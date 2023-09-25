@@ -6,40 +6,44 @@
 
 #include <mutex>
 #include <cassert>
+#include <iostream>
 #include <netdb.h>
+#include <unistd.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
 namespace c10d {
 
-void** getGlobalConnData()
+struct GlobalConnData& getGlobalConnData()
 {
-    static void** globalConnData = NULL;
+    static struct GlobalConnData globalConnData;
 
-    if (globalConnData == NULL) {
+    if (globalConnData.addresses.size() == 0) {
         const char *worldSizeStr = getenv("REAL_WORLD_SIZE");
         if (worldSizeStr == NULL)
             throw std::runtime_error("Error: REAL_WORLD_SIZE was not set");
 
-        const char *nodeCountStr = getenv("WORLD_SIZE");
+        const char *nodeCountStr = getenv("NUM_NODES");
         if (nodeCountStr == NULL)
-            throw std::runtime_error("Error: WORLD_SIZE was not set");
+            throw std::runtime_error("Error: NUM_NODES was not set");
 
         const char *jobName = getenv("JOB_NAME");
         if (jobName == NULL)
             throw std::runtime_error("Error: JOB_NAME was not set");
 
-        int worldSize = atoi(worldSizeStr);
-        assert(worldSize > 0);
-        int nodeCount = atoi(nodeCountStr);
-        assert(nodeCount > 0);
+        globalConnData.worldSize = atoi(worldSizeStr);
+        assert(globalConnData.worldSize > 0);
+        globalConnData.nodeCount = atoi(nodeCountStr);
+        assert(globalConnData.nodeCount > 0);
 
-        int procPerNode = worldSize / nodeCount;
-        if (worldSize != procPerNode * nodeCount)
+        globalConnData.procPerNode = globalConnData.worldSize / globalConnData.nodeCount;
+        if (globalConnData.worldSize != globalConnData.procPerNode * globalConnData.nodeCount)
             throw std::runtime_error("Error: invalid REAL_WORLD_SIZE and WORLD_SIZE");
-        assert(procPerNode > 0);
-        globalConnData = (void**)malloc(worldSize * sizeof(void*));
-        for (int i = 0; i < nodeCount; ++i) {
+        assert(globalConnData.procPerNode > 0);
+
+	std::cerr << getpid() <<  ": pytorch nodeCount=" << globalConnData.nodeCount << " worldSize=" << globalConnData.worldSize << " procPerNode=" << globalConnData.procPerNode << std::endl;
+        globalConnData.addresses.resize(globalConnData.worldSize);
+        for (int i = 0; i < globalConnData.nodeCount; ++i) {
             std::ostringstream nodeNameOss;
             if (i == 0) {
                 nodeNameOss << jobName << "-master-0";
@@ -50,36 +54,35 @@ void** getGlobalConnData()
 	    std::string nodeName = nodeNameOss.str();
 	    struct addrinfo *addrInfo;
             if (getaddrinfo(nodeName.c_str(), NULL, NULL, &addrInfo)!=0) {
-                // TODO: fix the memory leak of globalConnData here
                 throw std::runtime_error(("Error: getaddrinfo for " + nodeName + " failed!").c_str());
             }
 
-            int portBase = 976; // use priviliaged port to avoid collision
-            for (int j = 0; j < procPerNode; ++j) {
-                int globalRank = i * procPerNode + j;
-                globalConnData[globalRank] = (struct sockaddr*)calloc(1, sizeof(struct sockaddr));
-                memcpy(globalConnData[globalRank], addrInfo->ai_addr, sizeof(struct sockaddr));
-
-                int port = portBase + j;
-                struct sockaddr* sock_addr = (struct sockaddr*)globalConnData[globalRank];
-
-                if (sock_addr->sa_family == AF_INET) {
-                    struct sockaddr_in *sin = (struct sockaddr_in*)sock_addr;
-                    sin->sin_port = htons(port);
-                } else if (sock_addr->sa_family == AF_INET6) {
-                    struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)sock_addr;
-                    sin6->sin6_port = htons(port);
-                } else {
-                    throw std::runtime_error("Error: unknown AF family");
-                }
+            for (int j = 0; j < globalConnData.procPerNode; ++j) {
+                int globalRank = i * globalConnData.procPerNode + j;
+                memcpy(&globalConnData.addresses[globalRank], addrInfo->ai_addr, sizeof(struct sockaddr));
             }
+
+            freeaddrinfo(addrInfo);
         }
     }
 
-    assert(globalConnData);
+    assert(globalConnData.addresses);
     return globalConnData;
 }
 
+void setConnDataPort(void *connData, int port) {
+    struct sockaddr* sockAddr = (struct sockaddr *)connData;
+
+    if (sockAddr->sa_family == AF_INET) {
+        struct sockaddr_in *sin = (struct sockaddr_in*)sockAddr;
+        sin->sin_port = htons(port);
+    } else if (sockAddr->sa_family == AF_INET6) {
+        struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)sockAddr;
+        sin6->sin6_port = htons(port);
+    } else {
+        throw std::runtime_error("Error: unknown AF family");
+    }
+}
 
 ncclComm_t NCCLComm::getNcclComm() {
   std::unique_lock<std::mutex> lock(mutex_);

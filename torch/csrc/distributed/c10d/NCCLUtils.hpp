@@ -4,10 +4,11 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-
+#include <unistd.h>
+#include <iostream>
 #include <memory>
 #include <mutex>
-
+#include <sys/socket.h>
 #include <nccl.h>
 #include <c10/util/Exception.h>
 #include <c10/util/Optional.h>
@@ -86,7 +87,17 @@ std::string getNcclErrorDetailStr(
   ncclResult_t error,
   c10::optional<std::string> processGroupFailureReason = c10::nullopt);
 
-void** getGlobalConnData();
+struct GlobalConnData {
+    std::vector<struct sockaddr> addresses;
+    int procPerNode;
+    int nodeCount;
+    int worldSize;
+    int ncclCommCounter;
+};
+
+struct GlobalConnData& getGlobalConnData();
+
+void setConnDataPort(void *connData, int port);
 
 // RAII wrapper for NCCL communicator
 class NCCLComm {
@@ -120,25 +131,38 @@ class NCCLComm {
       int rank,
       ncclUniqueId commId,
       const std::vector<int>& globalRanks) {
+
     auto comm = std::make_shared<NCCLComm>();
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-    void** globalConnData = getGlobalConnData();
-    
+    struct GlobalConnData& globalConnData = getGlobalConnData();
     if (globalRanks.size() == 0) {
-        config.connData = globalConnData;
+        assert(globalConnData.worldSize == nRanks);
     } else {
-        void** conn_data = (void**)malloc(globalRanks.size() * sizeof(void*));
-	for (auto i = 0LLU; i < globalRanks.size(); ++i) {
-            conn_data[i] = globalConnData[globalRanks[i]];
-	}
-
-	config.connData = conn_data;
+	assert(globalRanks.size() == nRanks);
     }
+
+    void** currentConnData = (void**)malloc(numRanks * sizeof(void*));
+    int portBase = 976 + globalConnData.procPerNode * globalConnData.ncclCommCounter;
+
+    for (int i = 0; i < numRanks; ++i) {
+        currentConnData[i] = malloc(sizeof(struct sockaddr));
+
+	int globalRank = (globalRanks.size() == 0) ? i : globalRanks[i];
+        memcpy(currentConnData[i], &globalConnData.addresses[globalRank], sizeof(struct sockaddr));
+	int port = portBase + globalRank % globalConnData.procPerNode;
+	setConnDataPort(currentConnData[i], port);
+
+        if (i == rank)
+            std::cerr << getpid() << ": create comm " << globalConnData.ncclCommCounter << " using port " << port << std::endl;
+    }
+   
+    config.connData = currentConnData;
 
     C10D_NCCL_CHECK(
         ncclCommInitRankConfig(&(comm->ncclComm_), numRanks, commId, rank, &config), c10::nullopt);
     comm->ncclId_ = commId;
     comm->rank_ = rank;
+    globalConnData.ncclCommCounter += 1;
     return comm;
   }
 

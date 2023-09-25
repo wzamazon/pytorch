@@ -1119,6 +1119,8 @@ void ProcessGroupNCCL::broadcastUniqueNCCLID(
   } else {
     storeKey = p2pKey;
   }
+
+  std::cerr << getpid() << ": ProcessGroupNCCL::broadcastUniqueNCCLID, ncclCommCounter_=" << ncclCommCounter_ << std::endl;
   if (rank_ == 0 || (isSingleP2POp && p2pRank == 0)) {
     auto vec = std::vector<uint8_t>(
         reinterpret_cast<uint8_t*>(ncclID),
@@ -1222,6 +1224,8 @@ std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::getNCCLComm(
   if (!isSendRecvSelf) {
     // Broadcast so that each process can have a unique NCCL ID
     broadcastUniqueNCCLID(&ncclID, singleP2POp, devicesKey, p2pRank);
+  } else {
+    std::cerr << getpid() << ": do not broadcastUniqueNCCLID" << std::endl;
   }
 
   at::cuda::OptionalCUDAGuard gpuGuard;
@@ -1275,6 +1279,7 @@ std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::getNCCLComm(
     int deviceIndex = devices[i].index();
 
     gpuGuard.set_index(deviceIndex);
+    std::cerr << getpid() << ": calling NCCLComm::create()" << std::endl;
     ncclComms[i] = NCCLComm::create(numRanks, rank, ncclID, global_ranks_);
 
     // Creates the NCCL streams
