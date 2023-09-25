@@ -86,6 +86,8 @@ std::string getNcclErrorDetailStr(
   ncclResult_t error,
   c10::optional<std::string> processGroupFailureReason = c10::nullopt);
 
+void** get_global_conn_data();
+
 // RAII wrapper for NCCL communicator
 class NCCLComm {
  public:
@@ -116,10 +118,25 @@ class NCCLComm {
   static std::shared_ptr<NCCLComm> create(
       int numRanks,
       int rank,
-      ncclUniqueId commId) {
+      ncclUniqueId commId,
+      const vector<int>& global_ranks) {
     auto comm = std::make_shared<NCCLComm>();
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    void** global_conn_data = get_global_conn_data();
+    
+    if (global_ranks.size() == 0) {
+        config.connData = global_conn_data;
+    } else {
+        void** conn_data = (void**)malloc(glob_ranks.size() * sizeof(void*));
+	for (auto i = 0; i < global_ranks.size(); ++i) {
+            conn_data[i] = global_conn_data[global_ranks[i]];
+	}
+
+	config.connData = conn_data;
+    }
+
     C10D_NCCL_CHECK(
-        ncclCommInitRank(&(comm->ncclComm_), numRanks, commId, rank), c10::nullopt);
+        ncclCommInitRankConfig(&(comm->ncclComm_), numRanks, commId, rank, &config), c10::nullopt);
     comm->ncclId_ = commId;
     comm->rank_ = rank;
     return comm;

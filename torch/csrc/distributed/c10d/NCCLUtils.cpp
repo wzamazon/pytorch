@@ -8,6 +8,80 @@
 
 namespace c10d {
 
+void** getGlobalConnData()
+{
+    static void** globalConnData = NULL;
+
+    if (globalConnData == NULL) {
+        const char *worldSizeStr = getenv("REAL_WORLD_SIZE");
+	if (worldSizeStr == NULL)
+	    throw std::runtime_error("Error: REAL_WORLD_SIZE was not set");
+
+        const char *nodeCountStr = getenv("WORLD_SIZE");
+	if (nodeCountStr == NULL)
+	    throw std::runtime_error("Error: WORLD_SIZE was not set");
+
+        const char *nodeRankStr = getenv("RANK");
+	if (nodeRankStr == NULL)
+	    throw std::runtime_error("Error: RANK was not set");
+
+        const char *jobName = getenv("JOB_NAME");
+	if (jobName == NULL)
+	    throw std::runtime_error("Error: JOB_NAME was not set");
+
+	int worldSize = atoi(worldSizeStr);
+	int nodeCount = atoi(nodeCountStr);
+	int nodeRank = atoi(nodeRankStr);
+
+	int procPerNode = worldSize / nodeCount;
+	if (worldSize != procPerNode * nodeCount)
+	    throw std::runtime_error("Error: invalid REAL_WORLD_SIZE and WORLD_SIZE");
+
+	globalConnData = (void**)malloc(worldSize * sizeof(void*));
+	for (int i = 0; i < nodeCount; ++i) {
+            std::ostringstream nodeNameOss;
+	    if (i == 0) {
+                nodeNameOss << jobName << "-master-0";
+	    } else {
+		nodeNameOss << jobName << "-worker-" << (i - 1);
+	    }
+
+            if (getaddrinfo(nodeNameOss.str().c_str(), NULL, NULL, &addrInfo)!=0) {
+		// TODO: fix the memory leak
+                std::cerr << "Debug: nodeName=" << nodeName.Oss.str() << std::endl;
+		throw std::runtime_error("Error: getaddrinfo failed!");
+            }
+
+	    int portBase = 976; // use priviliaged port to avoid collision
+	    for (int j = 0; j < procPerNode; ++j) {
+                int globalRank = i * procPerNode + j;
+		globalConnData[globalRank] = (struct sockaddr*)calloc(1, sizeof(struct sockaddr));
+		memcpy(globalConnData[globalRank], addrInfo->ai_addr, sizeof(struct sockaddr));
+
+		int port = portBase + j;
+		struct sockaddr* sock_addr = (struct sockaddr*)globalConnData[globalRank];
+
+		if (sock_addr->sa_family == AF_INET) {
+			struct sockaddr_in *sin = (struct sockaddr_in*)sock_addr;
+			sin->sin_port = htons(port);
+		} else if (sock_addr->sa_family == AF_INET6) {
+			struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)sock_addr;
+			sin6->sin6_port = htons(port);
+		} else {
+			throw std::runtime_error("Error: unknown AF family");
+		}
+
+
+
+
+	}
+
+
+    }
+
+  }
+
+
 ncclComm_t NCCLComm::getNcclComm() {
   std::unique_lock<std::mutex> lock(mutex_);
   if (aborted_) {
