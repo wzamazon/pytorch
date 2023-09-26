@@ -31,6 +31,8 @@ namespace c10d {
 
 constexpr const char* const kNCCLAbortedCommStoreKey = "NCCLABORTEDCOMM";
 
+int globalNcclCommCounter = 0;
+
 namespace {
 
 #if defined(NCCL_MAJOR) && \
@@ -1125,12 +1127,14 @@ void ProcessGroupNCCL::broadcastUniqueNCCLID(
     auto vec = std::vector<uint8_t>(
         reinterpret_cast<uint8_t*>(ncclID),
         reinterpret_cast<uint8_t*>(ncclID) + NCCL_UNIQUE_ID_BYTES);
+    vec.push_back(globalNcclCommCounter);
     store_->set(storeKey, vec);
   } else {
     try {
       auto vec = store_->get(storeKey);
-      TORCH_CHECK(vec.size() == NCCL_UNIQUE_ID_BYTES);
-      std::memcpy(ncclID, vec.data(), vec.size());
+      TORCH_CHECK(vec.size() == NCCL_UNIQUE_ID_BYTES + 1);
+      std::memcpy(ncclID, vec.data(), NCCL_UNIQUE_ID_BYTES);
+      globalNcclCommCounter = vec[NCCL_UNIQUE_ID_BYTES];
     } catch (const std::exception& e) {
       std::string exceptionMsg = c10::str(
           "[",
@@ -1280,7 +1284,8 @@ std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::getNCCLComm(
 
     gpuGuard.set_index(deviceIndex);
     std::cerr << getpid() << ": calling NCCLComm::create()" << std::endl;
-    ncclComms[i] = NCCLComm::create(numRanks, rank, ncclID, global_ranks_);
+    ncclComms[i] = NCCLComm::create(numRanks, rank, ncclID, global_ranks_, globalNcclCommCounter);
+    globalNcclCommCounter += 1;
 
     // Creates the NCCL streams
     streamVal.push_back(

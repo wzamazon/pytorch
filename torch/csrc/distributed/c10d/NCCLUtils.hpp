@@ -92,7 +92,6 @@ struct GlobalConnData {
     int procPerNode;
     int nodeCount;
     int worldSize;
-    int ncclCommCounter;
 };
 
 struct GlobalConnData& getGlobalConnData();
@@ -130,7 +129,8 @@ class NCCLComm {
       int numRanks,
       int rank,
       ncclUniqueId commId,
-      const std::vector<int>& globalRanks) {
+      const std::vector<int>& globalRanks,
+      int ncclCommIndex) {
 
     auto comm = std::make_shared<NCCLComm>();
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
@@ -142,7 +142,7 @@ class NCCLComm {
     }
 
     void** currentConnData = (void**)malloc(numRanks * sizeof(void*));
-    int portBase = 976 + globalConnData.procPerNode * globalConnData.ncclCommCounter;
+    int portBase = 976 + globalConnData.procPerNode * ncclCommIndex;
 
     for (int i = 0; i < numRanks; ++i) {
         currentConnData[i] = malloc(sizeof(struct sockaddr));
@@ -152,8 +152,19 @@ class NCCLComm {
 	int port = portBase + globalRank % globalConnData.procPerNode;
 	setConnDataPort(currentConnData[i], port);
 
-        if (i == rank)
-            std::cerr << getpid() << ": create comm " << globalConnData.ncclCommCounter << " using port " << port << std::endl;
+        if (i == rank) {
+            std::cerr << getpid() << ": create comm " << ncclCommIndex << " using port " << port << " rank=" << rank << " size=" << numRanks << std::endl;
+	    if (globalRanks.size()) {
+                std::ostringstream oss;
+                oss << getpid() << ": create comm globalRanks vector size: " << globalRanks.size() << " value:";
+                for (auto i=globalRanks.begin(); i != globalRanks.end(); ++i) {
+                    oss << " " << *i;
+                }
+                std::cerr << oss.str() << std::endl;
+           } else {
+                std::cerr << getpid() << ": globalRanks vector is empty" << std::endl;
+	   }
+	}
     }
    
     config.connData = currentConnData;
@@ -162,7 +173,6 @@ class NCCLComm {
         ncclCommInitRankConfig(&(comm->ncclComm_), numRanks, commId, rank, &config), c10::nullopt);
     comm->ncclId_ = commId;
     comm->rank_ = rank;
-    globalConnData.ncclCommCounter += 1;
     return comm;
   }
 
