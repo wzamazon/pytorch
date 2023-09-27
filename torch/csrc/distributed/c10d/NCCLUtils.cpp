@@ -41,7 +41,7 @@ struct GlobalConnData& getGlobalConnData()
             throw std::runtime_error("Error: invalid REAL_WORLD_SIZE and WORLD_SIZE");
         assert(globalConnData.procPerNode > 0);
 
-	std::cerr << getpid() <<  ": pytorch nodeCount=" << globalConnData.nodeCount << " worldSize=" << globalConnData.worldSize << " procPerNode=" << globalConnData.procPerNode << std::endl;
+	std::cerr << getpid() <<  ": pytorch nodeCount=" << globalConnData.nodeCount << " worldSize=" << globalConnData.worldSize << " procPerNode=" << globalConnData.procPerNode << " timestamp:" << dbtime() << std::endl;
         globalConnData.addresses.resize(globalConnData.worldSize);
         for (int i = 0; i < globalConnData.nodeCount; ++i) {
             std::ostringstream nodeNameOss;
@@ -64,6 +64,8 @@ struct GlobalConnData& getGlobalConnData()
 
             freeaddrinfo(addrInfo);
         }
+
+	std::cerr << getpid() <<  ": pytorch got all addresses. timestamp:" << dbtime() << std::endl;
     }
 
     assert(globalConnData.addresses);

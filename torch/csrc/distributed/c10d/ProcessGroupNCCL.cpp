@@ -619,19 +619,8 @@ ProcessGroupNCCL::ProcessGroupNCCL(
       traceKeyEnd_(getTraceEndKey("NCCL", rank)),
       terminateProcessGroup_(false),
       global_ranks_(global_ranks) {
-  if (global_ranks.size() > 0) {
-      std::cerr << getpid() << ": pytorch creating process group nccl with rank: " << rank << " size: " << size << std::endl;
-      std::ostringstream oss;
-      oss << getpid() << ": pytorch global_ranks vector size: " << global_ranks.size() << " value:";
-      for (auto i=global_ranks.begin(); i != global_ranks.end(); ++i) {
-          oss << " " << *i;
-      }
-      std::cerr << oss.str() << std::endl;
-  } else {
-     std::cerr << getpid() << ": pytorch creating process group nccl with rank: " << rank << " size: " << size << std::endl;
-     std::cerr << getpid() << ": pytorch global_ranks vector is empty" << std::endl;
-  }
 
+  std::cerr << getpid() << ": pytorch creating process group nccl with rank: " << rank << " size: " << size << std::endl;
   TORCH_CHECK(
       at::cuda::getNumGPUs() != 0,
       "ProcessGroupNCCL is only supported with GPUs, no GPUs found!");

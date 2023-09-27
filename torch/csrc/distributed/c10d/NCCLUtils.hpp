@@ -9,6 +9,7 @@
 #include <memory>
 #include <mutex>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <nccl.h>
 #include <c10/util/Exception.h>
 #include <c10/util/Optional.h>
@@ -75,6 +76,13 @@
       abort();                                           \
     }                                                    \
   } while (0)
+
+static inline double dbtime()
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec + tv.tv_usec * 1e-6;
+}
 
 namespace c10d {
 
@@ -153,17 +161,7 @@ class NCCLComm {
 	setConnDataPort(currentConnData[i], port);
 
         if (i == rank) {
-            std::cerr << getpid() << ": create comm " << ncclCommIndex << " using port " << port << " rank=" << rank << " size=" << numRanks << std::endl;
-	    if (globalRanks.size()) {
-                std::ostringstream oss;
-                oss << getpid() << ": create comm globalRanks vector size: " << globalRanks.size() << " value:";
-                for (auto i=globalRanks.begin(); i != globalRanks.end(); ++i) {
-                    oss << " " << *i;
-                }
-                std::cerr << oss.str() << std::endl;
-           } else {
-                std::cerr << getpid() << ": globalRanks vector is empty" << std::endl;
-	   }
+            std::cerr << getpid() << ": create comm " << ncclCommIndex << " using port " << port << " rank=" << rank << " size=" << numRanks << " timestamp:" << dbtime() << std::endl;
 	}
     }
    
