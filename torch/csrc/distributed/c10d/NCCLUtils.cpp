@@ -14,6 +14,13 @@
 
 namespace c10d {
 
+NCCLConnData::NCCLConnData()
+{
+    memset(&sockAddr_, 0, sizeof(sockAddr_));
+    hostCntWithSameIp_ = 0;
+    hostIdxWithSameIp_ = 0;
+}
+
 NCCLConnData::NCCLConnData(std::string ipaddr, int hostCntWithSameIp, int hostIdxWithSameIp)
 {
     if (ipaddr.find(".") != std::string::npos) {
@@ -84,6 +91,13 @@ int NCCLConnData::getPort() const {
     throw std::runtime_error("Error: unknown AF family");
 }
 
+NCCLConnData NCCLConnData::copy() const {
+    NCCLConnData copy;
+    memcpy(&copy.sockAddr_, &sockAddr_, sizeof(this->sockAddr_));
+    copy.hostCntWithSameIp_ = hostCntWithSameIp_;
+    copy.hostIdxWithSameIp_ = hostIdxWithSameIp_;
+    return copy;
+}
 
 ncclComm_t NCCLComm::getNcclComm() {
   std::unique_lock<std::mutex> lock(mutex_);

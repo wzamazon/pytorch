@@ -97,6 +97,7 @@ std::string getNcclErrorDetailStr(
 
 class TORCH_API NCCLConnData {
   public:
+    NCCLConnData();
 
     NCCLConnData(std::string ipaddr, int hostcntWithSameIp, int hostidxWithSameIp);
 
@@ -106,6 +107,9 @@ class TORCH_API NCCLConnData {
 
     int getPort() const;
 
+    NCCLConnData copy() const;
+
+  public:
     struct sockaddr sockAddr_;
 
     int hostCntWithSameIp_;
