@@ -911,7 +911,7 @@ def init_process_group(
         iplist = []
         for i in range(default_pg.size()):
             ipaddr = store.get(f"ip_{i}")
-            if len(ip_list)==0 or iplist[-1][0] != ipaddr:
+            if len(iplist)==0 or iplist[-1][0] != ipaddr:
                 iplist.append([ipaddr, 0])
             iplist[-1][1] += 1
 
