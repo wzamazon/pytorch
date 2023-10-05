@@ -2046,6 +2046,25 @@ options :class:`~torch.distributed.ProcessGroupNCCL.Options`).
 #endif
 
 #ifdef USE_C10D_NCCL
+  auto ncclConnData =
+      py::class_<::c10d::NCCLConnData>(
+          module, "NCCLConnData")
+          .def(py::init<string, int, int>())
+          .def("set_port",
+               &::c10d::NCCLConnData::setPort,
+               py::arg("port"),
+               py::call_guard<py::gil_scoped_release>())
+	  .def("port",
+               &::c10d::NCCLConnData::getPort,
+               py::call_guard<py::gil_scoped_release>())
+          .def("ipaddr",
+               &::c10d::NCCLConnData::getIpaddr,
+               py::call_guard<py::gil_scoped_release>())
+	  .def("copy",
+               &::c10d::NCCLConnData::copy,
+	       py::call_guard<py::gil_scoped_release>())
+      ;
+
   auto processGroupNCCL =
       intrusive_ptr_no_gil_destructor_class_<::c10d::ProcessGroupNCCL>(
           module, "ProcessGroupNCCL", backend)
@@ -2075,7 +2094,14 @@ options :class:`~torch.distributed.ProcessGroupNCCL.Options`).
           .def_property_readonly(
               "options", &::c10d::ProcessGroupNCCL::getOptions)
           .def_property_readonly(
-              "is_ucc_available", &::c10d::ProcessGroupNCCL::isUCCAvailable);
+              "is_ucc_available", &::c10d::ProcessGroupNCCL::isUCCAvailable)
+	  .def(
+	      "set_conn_data",
+	      &::c10d::ProcessGroupNCCL::setConnData,
+	      py::arg("conn_data"))
+	  .def(
+              "get_conn_data",
+	      &::c10d::ProcessGroupNCCL::getConnData);
 
   intrusive_ptr_class_<::c10d::ProcessGroupNCCL::Options>(
       processGroupNCCL,

@@ -5,8 +5,99 @@
 #ifdef USE_C10D_NCCL
 
 #include <mutex>
+#include <cassert>
+#include <iostream>
+#include <netdb.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
 
 namespace c10d {
+
+NCCLConnData::NCCLConnData()
+{
+    memset(&sockAddr_, 0, sizeof(sockAddr_));
+    hostCntWithSameIp_ = 0;
+    hostIdxWithSameIp_ = 0;
+}
+
+NCCLConnData::NCCLConnData(std::string ipaddr, int hostCntWithSameIp, int hostIdxWithSameIp)
+{
+    if (ipaddr.find(".") != std::string::npos) {
+        sockAddr_.sa_family = AF_INET;
+        struct sockaddr_in *sin = (struct sockaddr_in*)&sockAddr_;
+        if (inet_pton(AF_INET, ipaddr.c_str(), &sin->sin_addr) != 1) {
+            throw std::runtime_error("Error: invalid ipv4 addr" + ipaddr);
+        }
+    } else if (ipaddr.find(":") != std::string::npos) {
+        sockAddr_.sa_family = AF_INET6;
+        struct sockaddr_in6 *sin6 = (struct sockaddr_in6*)&sockAddr_;
+        if (inet_pton(AF_INET6, ipaddr.c_str(), &sin6->sin6_addr) != 1) {
+            throw std::runtime_error("Error: invalid ipv6 addr" + ipaddr);
+        }
+    } else {
+        throw std::runtime_error("Error: unknown ip address family for addr: " + ipaddr);
+    }
+
+    hostCntWithSameIp_ = hostCntWithSameIp;
+    hostIdxWithSameIp_ = hostIdxWithSameIp;
+}
+
+void NCCLConnData::setPort(int port) {
+    if (sockAddr_.sa_family == AF_INET) {
+        struct sockaddr_in *sin = (struct sockaddr_in*)&sockAddr_;
+        sin->sin_port = htons(port);
+    } else if (sockAddr_.sa_family == AF_INET6) {
+        struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&sockAddr_;
+        sin6->sin6_port = htons(port);
+    } else {
+        throw std::runtime_error("Error: unknown AF family");
+    }
+}
+
+std::string NCCLConnData::getIpaddr() const {
+    if (sockAddr_.sa_family == AF_INET) {
+        char ipaddr[INET_ADDRSTRLEN];
+        struct sockaddr_in *sin = (struct sockaddr_in*)&sockAddr_;
+        if (inet_ntop(AF_INET, &sin->sin_addr, ipaddr, INET_ADDRSTRLEN) == NULL) {
+            throw std::runtime_error("Error: cannot convert ipv4 addr to string");
+        }
+
+	return std::string(ipaddr);
+    }
+   
+    if (sockAddr_.sa_family == AF_INET6) {
+        char ipaddr[INET6_ADDRSTRLEN];
+        struct sockaddr_in6 *sin6 = (struct sockaddr_in6*)&sockAddr_;
+        if (inet_ntop(AF_INET6, &sin6->sin6_addr, ipaddr, INET6_ADDRSTRLEN) == NULL) {
+            throw std::runtime_error("Error: connot covert ipv6 addr to string");
+        }
+    }
+
+    throw std::runtime_error("Error: unknown ip address family for addr");
+}
+
+int NCCLConnData::getPort() const {
+    if (sockAddr_.sa_family == AF_INET) {
+        struct sockaddr_in *sin = (struct sockaddr_in*)&sockAddr_;
+        return ntohs(sin->sin_port);
+    }
+   
+    if (sockAddr_.sa_family == AF_INET6) {
+        struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&sockAddr_;
+	return ntohs(sin6->sin6_port);
+    }
+   
+    throw std::runtime_error("Error: unknown AF family");
+}
+
+NCCLConnData NCCLConnData::copy() const {
+    NCCLConnData copy;
+    memcpy(&copy.sockAddr_, &sockAddr_, sizeof(this->sockAddr_));
+    copy.hostCntWithSameIp_ = hostCntWithSameIp_;
+    copy.hostIdxWithSameIp_ = hostIdxWithSameIp_;
+    return copy;
+}
 
 ncclComm_t NCCLComm::getNcclComm() {
   std::unique_lock<std::mutex> lock(mutex_);
