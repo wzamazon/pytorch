@@ -48,6 +48,43 @@ void NCCLConnData::setPort(int port) {
     }
 }
 
+std::string NCCLConnData::getIpaddr() const {
+    if (sockAddr_.sa_family == AF_INET) {
+        char ipaddr[INET_ADDRSTRLEN];
+        struct sockaddr_in *sin = (struct sockaddr_in*)&sockAddr_;
+        if (inet_ntop(AF_INET, &sin->sin_addr, ipaddr, INET_ADDRSTRLEN) == NULL) {
+            throw std::runtime_error("Error: cannot convert ipv4 addr to string");
+        }
+
+	return std::string(ipaddr);
+    }
+   
+    if (sockAddr_.sa_family == AF_INET6) {
+        char ipaddr[INET6_ADDRSTRLEN];
+        struct sockaddr_in6 *sin6 = (struct sockaddr_in6*)&sockAddr_;
+        if (inet_ntop(AF_INET6, &sin6->sin6_addr, ipaddr, INET6_ADDRSTRLEN) == NULL) {
+            throw std::runtime_error("Error: connot covert ipv6 addr to string");
+        }
+    }
+
+    throw std::runtime_error("Error: unknown ip address family for addr");
+}
+
+int NCCLConnData::getPort() const {
+    if (sockAddr_.sa_family == AF_INET) {
+        struct sockaddr_in *sin = (struct sockaddr_in*)&sockAddr_;
+        return ntohs(sin->sin_port);
+    }
+   
+    if (sockAddr_.sa_family == AF_INET6) {
+        struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&sockAddr_;
+	return ntohs(sin6->sin6_port);
+    }
+   
+    throw std::runtime_error("Error: unknown AF family");
+}
+
+
 ncclComm_t NCCLComm::getNcclComm() {
   std::unique_lock<std::mutex> lock(mutex_);
   if (aborted_) {

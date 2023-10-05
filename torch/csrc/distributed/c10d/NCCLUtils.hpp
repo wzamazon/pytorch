@@ -102,6 +102,10 @@ class TORCH_API NCCLConnData {
 
     void setPort(int port);
 
+    std::string getIpaddr() const;
+
+    int getPort() const;
+
     struct sockaddr sockAddr_;
 
     int hostCntWithSameIp_;

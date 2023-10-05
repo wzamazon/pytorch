@@ -2050,7 +2050,18 @@ options :class:`~torch.distributed.ProcessGroupNCCL.Options`).
       py::class_<::c10d::NCCLConnData>(
           module, "NCCLConnData")
           .def(py::init<string, int, int>())
+          .def("setPort",
+               &::c10d::NCCLConnData::setPort,
+               py::arg("port"),
+               py::call_guard<py::gil_scoped_release>())
+	  .def("getPort",
+               &::c10d::NCCLConnData::getPort,
+               py::call_guard<py::gil_scoped_release>())
+          .def("getIpaddr",
+               &::c10d::NCCLConnData::getIpaddr,
+               py::call_guard<py::gil_scoped_release>())
       ;
+
   auto processGroupNCCL =
       intrusive_ptr_no_gil_destructor_class_<::c10d::ProcessGroupNCCL>(
           module, "ProcessGroupNCCL", backend)
