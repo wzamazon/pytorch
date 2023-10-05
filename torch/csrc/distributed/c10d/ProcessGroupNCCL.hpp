@@ -414,6 +414,11 @@ class TORCH_API ProcessGroupNCCL : public Backend {
   // Tests if the UCC fallback path is available
   bool isUCCAvailable() const;
 
+  // set connection data
+  void setConnData(std::vector<NCCLConnData> connData);
+
+  std::vector<NCCLConnData> getConnData() const;
+
  protected:
   // Helper that broadcasts nccl unique ID to all ranks through the store
   void broadcastUniqueNCCLID(
@@ -682,11 +687,14 @@ class TORCH_API ProcessGroupNCCL : public Backend {
   // Counting for the sequential number of NCCL collective call.
   uint64_t seq_{0};
 
+
 #ifdef USE_NCCL_WITH_UCC
   // ProcessGroupUCC shared library handle and ProcessGroup pointer
   static std::shared_ptr<at::DynamicLibrary> uccLib_;
   c10::intrusive_ptr<Backend> uccPG_;
 #endif
+
+  std::vector<NCCLConnData> connData_;
 };
 
 } // namespace c10d

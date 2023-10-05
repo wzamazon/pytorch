@@ -31,6 +31,8 @@ namespace c10d {
 
 constexpr const char* const kNCCLAbortedCommStoreKey = "NCCLABORTEDCOMM";
 
+int globalNcclCommCounter = 0;
+
 namespace {
 
 #if defined(NCCL_MAJOR) && \
@@ -615,6 +617,8 @@ ProcessGroupNCCL::ProcessGroupNCCL(
       traceKeyStart_(getTraceStartKey("NCCL", rank)),
       traceKeyEnd_(getTraceEndKey("NCCL", rank)),
       terminateProcessGroup_(false) {
+
+  std::cerr << getpid() << ": pytorch creating process group nccl with rank: " << rank << " size: " << size << std::endl;
   TORCH_CHECK(
       at::cuda::getNumGPUs() != 0,
       "ProcessGroupNCCL is only supported with GPUs, no GPUs found!");
@@ -1104,16 +1108,20 @@ void ProcessGroupNCCL::broadcastUniqueNCCLID(
   } else {
     storeKey = p2pKey;
   }
+
+  std::cerr << getpid() << ": ProcessGroupNCCL::broadcastUniqueNCCLID, ncclCommCounter_=" << ncclCommCounter_ << std::endl;
   if (rank_ == 0 || (isSingleP2POp && p2pRank == 0)) {
     auto vec = std::vector<uint8_t>(
         reinterpret_cast<uint8_t*>(ncclID),
         reinterpret_cast<uint8_t*>(ncclID) + NCCL_UNIQUE_ID_BYTES);
+    vec.push_back(globalNcclCommCounter);
     store_->set(storeKey, vec);
   } else {
     try {
       auto vec = store_->get(storeKey);
-      TORCH_CHECK(vec.size() == NCCL_UNIQUE_ID_BYTES);
-      std::memcpy(ncclID, vec.data(), vec.size());
+      TORCH_CHECK(vec.size() == NCCL_UNIQUE_ID_BYTES + 1);
+      std::memcpy(ncclID, vec.data(), NCCL_UNIQUE_ID_BYTES);
+      globalNcclCommCounter = vec[NCCL_UNIQUE_ID_BYTES];
     } catch (const std::exception& e) {
       std::string exceptionMsg = c10::str(
           "[",
@@ -1160,6 +1168,16 @@ void ProcessGroupNCCL::destroyNCCLComms(const std::string& devNCCLCommMapKey) {
   devNCCLCommMap_.erase(devNCCLCommMapKey);
   // Clear used device indices.
   usedDeviceIdxs_.clear();
+}
+
+void ProcessGroupNCCL::setConnData(std::vector<NCCLConnData> connData)
+{
+  connData_.swap(connData);
+}
+
+std::vector<NCCLConnData> ProcessGroupNCCL::getConnData() const
+{
+  return connData_;
 }
 
 std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::getNCCLComm(
@@ -1260,7 +1278,13 @@ std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::getNCCLComm(
     int deviceIndex = devices[i].index();
 
     gpuGuard.set_index(deviceIndex);
-    ncclComms[i] = NCCLComm::create(numRanks, rank, ncclID);
+    for (int i = 0; i < connData_.size(); ++i) {
+	int portBase = 976; // todo: get it from an environment
+	int port = portBase + globalNcclCommCounter * connData_[i].hostCntWithSameIp_ + connData_[i].hostIdxWithSameIp_;
+	connData_[i].setPort(port);
+    }
+    ncclComms[i] = NCCLComm::create(numRanks, rank, ncclID, connData_);
+    globalNcclCommCounter += 1;
 
     // Creates the NCCL streams
     streamVal.push_back(

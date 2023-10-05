@@ -8,6 +8,7 @@ import os
 import pickle
 import time
 import warnings
+import socket
 from collections import namedtuple
 from datetime import timedelta
 from typing import Any, Dict, Optional, Tuple, Union
@@ -902,7 +903,25 @@ def init_process_group(
     else:
         # Use store based barrier here since barrier() used a bunch of
         # default devices and messes up NCCL internal state.
+        myip = socket.gethostbyname(socket.gethostname())
+        store.set(f"ip_{default_pg.rank()}", myip)
         _store_based_barrier(rank, store, timeout)
+
+        iplist = []
+        for i in range(default_pg.size()):
+            ipaddr = store.get(f"ip_{}")
+            if len(ip_list)==0 or iplist[-1][0] != ipaddr:
+                iplist.append([ipaddr, 0])
+            iplist[-1][1] += 1
+
+        conn_data = [None] * default_pg.size()
+        i = 0
+        for ip,count in iplist:
+            for j in range(count):
+                conn_data[i] = NCCLConnData(ip, count, j)
+                i += 1
+
+        default_pg.set_conn_data(conn_data)
 
 
 def _new_process_group_helper(
@@ -993,6 +1012,13 @@ def _new_process_group_helper(
 
             backend_class = ProcessGroupNCCL(backend_prefix_store, group_rank, group_size, pg_options)
             backend_type = ProcessGroup.BackendType.NCCL
+            if not is_default_group:
+                global_conn_data = _get_default_pg().get_conn_data()
+                current_conn_data = [None] * group_size
+                for i in range(group_size):
+                    current_conn_data[i] = globalConnData[global_ranks_in_group[i]]
+                backend_class.set_conn_data(conn_data)
+
         elif backend_str == Backend.UCC and is_ucc_available():
             # TODO: once UCC plugin is fully deprecated, remove
             # is_ucc_available() from above elif-condition and raise
