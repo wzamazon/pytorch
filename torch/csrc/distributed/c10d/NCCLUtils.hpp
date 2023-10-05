@@ -2,15 +2,19 @@
 
 #ifdef USE_C10D_NCCL
 
+#include <vector>
 #include <stdio.h>
 #include <stdlib.h>
-
+#include <unistd.h>
+#include <iostream>
 #include <memory>
 #include <mutex>
-
+#include <sys/socket.h>
+#include <sys/time.h>
 #include <nccl.h>
 #include <c10/util/Exception.h>
 #include <c10/util/Optional.h>
+
 
 #if defined(NCCL_MAJOR) && (NCCL_MAJOR == 2) && defined(NCCL_MINOR) && \
     (NCCL_MINOR >= 14)
@@ -140,6 +144,13 @@
     }                                                    \
   } while (0)
 
+static inline double dbtime()
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec + tv.tv_usec * 1e-6;
+}
+
 namespace c10d {
 
 std::string getNcclVersion();
@@ -152,6 +163,28 @@ int nccl_nonblocking_timeout();
 std::string getNcclErrorDetailStr(
   ncclResult_t error,
   c10::optional<std::string> processGroupFailureReason = c10::nullopt);
+
+class TORCH_API NCCLConnData {
+  public:
+    NCCLConnData();
+
+    NCCLConnData(std::string ipaddr, int hostcntWithSameIp, int hostidxWithSameIp);
+
+    void setPort(int port);
+
+    std::string getIpaddr() const;
+
+    int getPort() const;
+
+    NCCLConnData copy() const;
+
+  public:
+    struct sockaddr sockAddr_;
+
+    int hostCntWithSameIp_;
+
+    int hostIdxWithSameIp_;
+};
 
 // RAII wrapper for NCCL communicator
 class NCCLComm {
@@ -183,21 +216,58 @@ class NCCLComm {
   static std::shared_ptr<NCCLComm> create(
       int numRanks,
       int rank,
-      ncclUniqueId commId) {
+      ncclUniqueId commId,
+      const std::vector<NCCLConnData>& connData) {
+
     auto comm = std::make_shared<NCCLComm>();
-    C10D_NCCL_CHECK(
-        ncclCommInitRank(&(comm->ncclComm_), numRanks, commId, rank), c10::nullopt);
+
+    if (connData.size() == 0) {
+        std::cerr << "Creating NCCL Communiator using regular method" << std::endl;
+        assert(globalRanks.zie() == 0);
+        C10D_NCCL_CHECK(
+            ncclCommInitRank(&(comm->ncclComm_), numRanks, commId, rank), c10::nullopt);
+    } else {
+        std::cerr << "Creating NCCL Communiator using connection data" << std::endl;
+        assert(connData.size() == numRanks);
+        comm->connDataContents_ = connData;
+        comm->connDataPointers_.resize(numRanks);
+
+        for (int i = 0; i < numRanks; ++i) {
+            comm->connDataPointers_[i] = &(comm->connDataContents_[i]);
+        }
+
+        ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+        config.connData = &(comm->connDataPointers_[0]);
+        C10D_NCCL_CHECK(
+            ncclCommInitRankConfig(&(comm->ncclComm_), numRanks, commId, rank, &config), c10::nullopt);
+    }
+
     comm->ncclId_ = commId;
     comm->rank_ = rank;
     return comm;
   }
 
 #ifdef NCCL_HAS_COMM_NONBLOCKING
+
   static std::shared_ptr<NCCLComm> create(
       int numRanks,
       int rank,
       ncclUniqueId commId,
+      const std::vector<NCCLConnData>& connData,
       ncclConfig_t& config) {
+
+    if (connData.size() > 0) {
+        assert(connData.size() == numRanks);
+        comm->connDataContents_ = connData;
+        comm->connDataPointers_.resize(numRanks);
+
+        for (int i = 0; i < numRanks; ++i) {
+            comm->connDataPointers_[i] = &(comm->connDataContents_[i]);
+        }
+
+        config.connData = &(comm->connDataPointers_[0]);
+    }
+    
     auto comm = std::make_shared<NCCLComm>();
     if (nccl_use_nonblocking()) {
       config.blocking = 0;
@@ -303,6 +373,9 @@ class NCCLComm {
   // Optional reason for communicator failure, provided by ProcessGroupNCCL for
   // better error messaging.
   c10::optional<std::string> commFailureReason_;
+
+  std::vector<NCCLConnData> connDataContents_;
+  std::vector<void *> connDataPointers_;
 };
 
 // Helper that automatically cleans up premul sums.

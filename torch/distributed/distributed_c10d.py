@@ -8,6 +8,7 @@ import os
 import pickle
 import time
 import warnings
+import socket
 from collections import namedtuple
 from datetime import timedelta
 from typing import Any, Callable, Dict, Optional, Tuple, Union, List
@@ -30,7 +31,8 @@ from torch._C._distributed_c10d import (
     Store,
     DebugLevel,
     get_debug_level,
-    Work
+    Work,
+    NCCLConnData
 )
 from torch.autograd.profiler import record_function
 from .constants import default_pg_timeout
@@ -609,6 +611,10 @@ def _get_pg_default_device(group: Optional[ProcessGroup] = None):
     return _world.pg_default_device[group]
 
 
+# Environment variable to control whether to use new connData API to
+# create. Default value is 0 for now to stay same with previous behavior.
+_use_nccl_conn_data = int(os.getenv("TORCH_NCCL_USE_CONN_DATA", "0"))
+
 @_time_logger
 def _store_based_barrier(rank, store, group_name, rendezvous_count, timeout, logging_interval=timedelta(seconds=10)):
     """
@@ -1142,10 +1148,11 @@ def init_process_group(
         # these barriers may be unnecessary, as proven by a green CI after
         # removal. An environment variable `TORCH_DIST_INIT_BARRIER` has been
         # added which enables this barrier only when set to 1.
-        logger.info(
-            "Performing barrier after ProcessGroup initialization since "
-            "TORCH_DIST_INIT_BARRIER = 1"
-        )
+        if rank == 0:
+            logger.info(
+                "Performing barrier after ProcessGroup initialization since "
+                "TORCH_DIST_INIT_BARRIER = 1"
+            )
         if backend == Backend.MPI:
             # MPI backend doesn't use store.
             barrier()
@@ -1153,7 +1160,79 @@ def init_process_group(
             # Use store based barrier here since barrier() used a bunch of
             # default devices and messes up NCCL internal state.
             _store_based_barrier(rank, store, group_name, world_size, timeout)
+    else:
+        if rank == 0:
+            logger.info(
+                "TORCH_DIST_INIT_BARRIER is set to 0, omitting the barrier after "
+                "ProcessGroup initialization."
+            )
 
+    if (backend == Backend.NCCL) and _use_nccl_conn_data:
+        nccl_backend = default_pg._get_backend(torch.device("cuda"))
+        nccl_backend.set_conn_data(_get_global_nccl_conn_data(world_size))
+
+def _get_global_ip_list():
+    if "KUBERNETES_SERVICE_PORT" in os.environ:
+        import kubernetes
+
+        def _get_pod_rank(pod):
+            envpairs = pod.spec.containers[0].env
+            for p in envpairs:
+                if p.name == "RANK":
+                    return int(p.value)
+            raise RuntimeError("Error: cannot get rank for pod")
+
+        APISERVER="https://kubernetes.default.svc"
+        SERVICE_ACCOUNT="/var/run/secrets/kubernetes.io/serviceaccount"
+        NAMESPACE=open(os.path.join(SERVICE_ACCOUNT, "namespace")).read()
+        TOKEN=open(os.path.join(SERVICE_ACCOUNT, "token")).read()
+        CACERT=os.path.join(SERVICE_ACCOUNT, "ca.crt")
+        JOB_NAME = os.environ["JOB_NAME"]
+
+        configuration = kubernetes.client.Configuration(
+            host=APISERVER,
+            api_key={
+                "authorization": f"Bearer {TOKEN}",
+            },
+        )
+
+        configuration.ssl_ca_cert = CACERT
+
+        node_count = int(os.environ["NUM_NODES"])
+        world_size = int(os.environ["REAL_WORLD_SIZE"])
+        prc_per_node = world_size / node_count
+        client = kubernetes.client.ApiClient(configuration)
+        api = kubernetes.client.CoreV1Api(client)
+        ret = api.list_namespaced_pod(namespace=NAMESPACE, label_selector=f"job-name={JOB_NAME}", watch=False)
+        pod_ip_list = [None] * len(ret.items)
+        for pod in ret.items:
+            pod_ip = pod.status.pod_ip
+            pod_rank = _get_pod_rank(pod)
+            assert pod_rank >= 0 and pod_rank < len(pod_ip_list)
+            pod_ip_list[pod_rank] = pod_ip
+        return pod_ip_list
+
+    if "SLURM_NNODES" in os.environ:
+        hostnames = getoutput("scontrol show hostname").split()
+        ip_list = [None] * len(hostnames)
+        for i,hostname in enumerate(hostnames):
+            ip_list[i] = socket.gethostbyname(hostname)
+        return ip_list
+
+    raise RuntimeError("Error: unknown scheduling system")
+
+
+def _get_global_nccl_conn_data(world_size: int):
+    iplist = _get_global_ip_list()
+    num_node = len(iplist)
+    prc_per_node = world_size // num_node
+    assert world_size == prc_per_node * num_node
+    global_conn_data = [None] * world_size
+    for i,ip in enumerate(iplist):
+        for j in range(prc_per_node):
+            global_conn_data[i * prc_per_node + j] = NCCLConnData(ip, prc_per_node, j)
+
+    return global_conn_data
 
 def _new_process_group_helper(
     group_size,
@@ -1250,6 +1329,14 @@ def _new_process_group_helper(
 
             backend_class = ProcessGroupNCCL(backend_prefix_store, group_rank, group_size, pg_options)
             backend_type = ProcessGroup.BackendType.NCCL
+            if (not is_default_group) and _use_nccl_conn_data:
+                default_pg = _get_default_group()
+                global_nccl_backend = default_pg._get_backend(torch.device("cuda"))
+                global_conn_data = global_nccl_backend.get_conn_data()
+                current_conn_data = [None] * group_size
+                for i in range(group_size):
+                    current_conn_data[i] = global_conn_data[global_ranks_in_group[i]].copy()
+                backend_class.set_conn_data(current_conn_data)
         elif backend_str == Backend.UCC and is_ucc_available():
             # TODO: once UCC plugin is fully deprecated, remove
             # is_ucc_available() from above elif-condition and raise

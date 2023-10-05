@@ -472,6 +472,11 @@ class TORCH_API ProcessGroupNCCL : public Backend {
   // instead of relying on ProcessGroupNCCL destructor.
   void abort(c10::optional<std::string> abortReason = c10::nullopt);
 
+  // set connection data
+  void setConnData(std::vector<NCCLConnData> connData);
+
+  std::vector<NCCLConnData> getConnData() const;
+
  protected:
   // Helper that broadcasts nccl unique ID to all ranks through the store
   void broadcastUniqueNCCLID(
@@ -747,6 +752,8 @@ class TORCH_API ProcessGroupNCCL : public Backend {
   static std::shared_ptr<at::DynamicLibrary> uccLib_;
   c10::intrusive_ptr<Backend> uccPG_;
 #endif
+
+  std::vector<NCCLConnData> connData_;
 };
 
 } // namespace c10d
