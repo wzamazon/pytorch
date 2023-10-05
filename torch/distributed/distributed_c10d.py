@@ -31,7 +31,8 @@ from torch._C._distributed_c10d import (
     Store,
     DebugLevel,
     get_debug_level,
-    Work
+    Work,
+    NCCLConnData
 )
 from torch._six import string_classes
 from torch.autograd.profiler import record_function
@@ -909,7 +910,7 @@ def init_process_group(
 
         iplist = []
         for i in range(default_pg.size()):
-            ipaddr = store.get(f"ip_{}")
+            ipaddr = store.get(f"ip_{i}")
             if len(ip_list)==0 or iplist[-1][0] != ipaddr:
                 iplist.append([ipaddr, 0])
             iplist[-1][1] += 1
@@ -1016,7 +1017,7 @@ def _new_process_group_helper(
                 global_conn_data = _get_default_pg().get_conn_data()
                 current_conn_data = [None] * group_size
                 for i in range(group_size):
-                    current_conn_data[i] = globalConnData[global_ranks_in_group[i]]
+                    current_conn_data[i] = globalConnData[global_ranks_in_group[i]].copy()
                 backend_class.set_conn_data(conn_data)
 
         elif backend_str == Backend.UCC and is_ucc_available():
