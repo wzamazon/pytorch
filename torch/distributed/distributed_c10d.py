@@ -906,6 +906,7 @@ def init_process_group(
         # default devices and messes up NCCL internal state.
         myip = socket.gethostbyname(socket.gethostname())
         store.set(f"ip_{default_pg.rank()}", myip)
+
         _store_based_barrier(rank, store, timeout)
 
         iplist = []
@@ -915,14 +916,15 @@ def init_process_group(
                 iplist.append([ipaddr, 0])
             iplist[-1][1] += 1
 
-        conn_data = [None] * default_pg.size()
+        global_conn_data = [None] * default_pg.size()
         i = 0
         for ip,count in iplist:
             for j in range(count):
-                conn_data[i] = NCCLConnData(ip, count, j)
+                global_conn_data[i] = NCCLConnData(ip, count, j)
                 i += 1
 
-        default_pg.set_conn_data(conn_data)
+        nccl_backend = default_pg._get_backend(torch.device("cuda"))
+        nccl_backend.set_conn_data(global_conn_data)
 
 
 def _new_process_group_helper(
@@ -1014,12 +1016,13 @@ def _new_process_group_helper(
             backend_class = ProcessGroupNCCL(backend_prefix_store, group_rank, group_size, pg_options)
             backend_type = ProcessGroup.BackendType.NCCL
             if not is_default_group:
-                global_conn_data = _get_default_pg().get_conn_data()
+                default_pg = _get_default_group()
+                global_nccl_backend = default_pg._get_backend(torch.device("cuda"))
+                global_conn_data = global_nccl_backend.get_conn_data()
                 current_conn_data = [None] * group_size
                 for i in range(group_size):
-                    current_conn_data[i] = globalConnData[global_ranks_in_group[i]].copy()
-                backend_class.set_conn_data(conn_data)
-
+                    current_conn_data[i] = global_conn_data[global_ranks_in_group[i]].copy()
+                backend_class.set_conn_data(current_conn_data)
         elif backend_str == Backend.UCC and is_ucc_available():
             # TODO: once UCC plugin is fully deprecated, remove
             # is_ucc_available() from above elif-condition and raise
