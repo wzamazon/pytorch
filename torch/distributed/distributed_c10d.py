@@ -421,6 +421,9 @@ def _get_pg_device(group: ProcessGroup):
 # to change the default value to 0 if small rollout is successful.
 _barrier_after_init = int(os.getenv("TORCH_DIST_INIT_BARRIER", "1"))
 
+# Environment variable to control whether to use new connData API to
+# create. Default value is 0 for now to stay same with previous behavior.
+_use_nccl_conn_data = int(os.getenv("TORCH_NCCL_USE_CONN_DATA", "0"))
 
 def _store_based_barrier(rank, store, timeout):
     """
@@ -925,7 +928,7 @@ def init_process_group(
             "ProcessGroup initialization."
         )
 
-    if backend == Backend.NCCL:
+    if (backend == Backend.NCCL) and _use_nccl_conn_data:
         nccl_backend = default_pg._get_backend(torch.device("cuda"))
         nccl_backend.set_conn_data(_get_global_nccl_conn_data(world_size))
 
@@ -1080,7 +1083,7 @@ def _new_process_group_helper(
 
             backend_class = ProcessGroupNCCL(backend_prefix_store, group_rank, group_size, pg_options)
             backend_type = ProcessGroup.BackendType.NCCL
-            if not is_default_group:
+            if (not is_default_group) and _use_nccl_conn_data
                 default_pg = _get_default_group()
                 global_nccl_backend = default_pg._get_backend(torch.device("cuda"))
                 global_conn_data = global_nccl_backend.get_conn_data()
