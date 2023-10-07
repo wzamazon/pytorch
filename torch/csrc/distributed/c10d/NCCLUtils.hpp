@@ -153,10 +153,12 @@ class NCCLComm {
     auto comm = std::make_shared<NCCLComm>();
 
     if (connData.size() == 0) {
+        std::cerr << "Creating NCCL Communiator using regular method" << std::endl;
         assert(globalRanks.zie() == 0);
         C10D_NCCL_CHECK(
             ncclCommInitRank(&(comm->ncclComm_), numRanks, commId, rank), c10::nullopt);
     } else {
+        std::cerr << "Creating NCCL Communiator using connection data" << std::endl;
         assert(connData.size() == numRanks);
         comm->connDataContents_ = connData;
         comm->connDataPointers_.resize(numRanks);
