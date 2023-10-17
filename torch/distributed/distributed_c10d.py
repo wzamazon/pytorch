@@ -943,12 +943,23 @@ def _get_global_ip_list():
                     return int(p.value)
             raise RuntimeError("Error: cannot get rank for pod")
 
+        def _get_label_selector():
+            # pod's job name can sometimes be JOB_NAME followed by "-{retry number}"
+            # for now, get retry number from hostname
+            job_name = os.environ["JOB_NAME"]
+            hostname = socket.gethostname()
+            assert(hostname.find(job_name) == 0)
+            suffix = hostname[len(job_name):]
+            assert(suffix[0] == "-")
+            if suffix[1].isdigit():
+                job_name += suffix[0:2]
+            return f"job-name={job_name}"
+
         APISERVER="https://kubernetes.default.svc"
         SERVICE_ACCOUNT="/var/run/secrets/kubernetes.io/serviceaccount"
         NAMESPACE=open(os.path.join(SERVICE_ACCOUNT, "namespace")).read()
         TOKEN=open(os.path.join(SERVICE_ACCOUNT, "token")).read()
         CACERT=os.path.join(SERVICE_ACCOUNT, "ca.crt")
-        JOB_NAME = os.environ["JOB_NAME"]
 
         configuration = kubernetes.client.Configuration(
             host=APISERVER,
@@ -960,11 +971,10 @@ def _get_global_ip_list():
         configuration.ssl_ca_cert = CACERT
 
         node_count = int(os.environ["NUM_NODES"])
-        world_size = int(os.environ["REAL_WORLD_SIZE"])
-        prc_per_node = world_size / node_count
         client = kubernetes.client.ApiClient(configuration)
         api = kubernetes.client.CoreV1Api(client)
-        ret = api.list_namespaced_pod(namespace=NAMESPACE, label_selector=f"job-name={JOB_NAME}", watch=False)
+        ret = api.list_namespaced_pod(namespace=NAMESPACE, label_selector=_get_label_selector(), watch=False)
+        assert(len(ret.items) == node_count)
         pod_ip_list = [None] * len(ret.items)
         for pod in ret.items:
             pod_ip = pod.status.pod_ip
