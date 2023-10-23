@@ -2186,6 +2186,7 @@ options :class:`~torch.distributed.ProcessGroupNCCL.Options`).
 	  .def(
 	      "set_conn_data",
 	      &::c10d::ProcessGroupNCCL::setConnData,
+	      py::arg("group_id"),
 	      py::arg("conn_data"))
 	  .def(
               "get_conn_data",

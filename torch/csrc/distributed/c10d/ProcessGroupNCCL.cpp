@@ -32,8 +32,6 @@ namespace c10d {
 
 constexpr const char* const kNCCLAbortedCommStoreKey = "NCCLABORTEDCOMM";
 
-int globalNcclCommCounter = 0;
-
 namespace {
 
 #if defined(NCCL_MAJOR) && \
@@ -1003,19 +1001,16 @@ void ProcessGroupNCCL::broadcastUniqueNCCLID(
     storeKey = p2pKey;
   }
 
-  std::cerr << getpid() << ": ProcessGroupNCCL::broadcastUniqueNCCLID, ncclCommCounter_=" << ncclCommCounter_ << std::endl;
   if (rank_ == 0 || (isSingleP2POp && p2pRank == 0)) {
     auto vec = std::vector<uint8_t>(
         reinterpret_cast<uint8_t*>(ncclID),
         reinterpret_cast<uint8_t*>(ncclID) + NCCL_UNIQUE_ID_BYTES);
-    vec.push_back(globalNcclCommCounter);
     store_->set(storeKey, vec);
   } else {
     try {
       auto vec = store_->get(storeKey);
-      TORCH_CHECK(vec.size() == NCCL_UNIQUE_ID_BYTES + 1);
+      TORCH_CHECK(vec.size() == NCCL_UNIQUE_ID_BYTES);
       std::memcpy(ncclID, vec.data(), NCCL_UNIQUE_ID_BYTES);
-      globalNcclCommCounter = vec[NCCL_UNIQUE_ID_BYTES];
     } catch (const std::exception& e) {
       std::string exceptionMsg = c10::str(
           "[",
@@ -1068,14 +1063,40 @@ void ProcessGroupNCCL::destroyNCCLComms(const std::string& devNCCLCommMapKey) {
   usedDeviceIdxs_.clear();
 }
 
-void ProcessGroupNCCL::setConnData(std::vector<NCCLConnData> connData)
+void ProcessGroupNCCL::setConnData(int groupIdx, std::vector<NCCLConnData> connData)
 {
+  groupIdx_ = groupIdx;
   connData_.swap(connData);
 }
 
 std::vector<NCCLConnData> ProcessGroupNCCL::getConnData() const
 {
   return connData_;
+}
+
+int ProcessGroupNCCL::getConnDataPortBase() const
+{
+  static int result = -1;
+
+  if (result == -1) {
+    // user need to reserve some ports by running
+    //  sysctl -w net.ipv4.ip_local_reserved_ports=XXXX
+    // then set this environment variable.
+    char *env = getenv("TORCH_NCCL_CONN_DATA_PORT_BASE");
+    if (env) {
+      if (!isdigit(env[0])) {
+	throw std::runtime_error("Error: wrong TORCH_NCCL_CONN_DATA_PORT_BASE");
+      }
+      result = atoi(env);
+    } else {
+      // default value of 976 is assuming 6 communicators, and 8 processes
+      // per instance, and we want to use priviliged ports which is < 1024
+      result = 976;
+    }
+  }
+
+  assert(result != -1);
+  return result;
 }
 
 std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::getNCCLComm(
@@ -1120,7 +1141,15 @@ std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::getNCCLComm(
   }
 
   // For point-to-point communication on the same process, don't need broadcast.
-  if (!isSendRecvSelf) {
+  bool needBroadcastNcclId = true;
+  if (isSendRecvSelf)
+    needBroadcastNcclId = false;
+
+  // If user has provided connData, don't need broadcast either.
+  if (connData_.size() > 0)
+    needBroadcastNcclId = false;
+
+  if (needBroadcastNcclId) {
     // Broadcast so that each process can have a unique NCCL ID
     broadcastUniqueNCCLID(&ncclID, singleP2POp, devicesKey, p2pRank);
   }
@@ -1177,10 +1206,20 @@ std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::getNCCLComm(
     int deviceIndex = devices[i].index();
 
     gpuGuard.set_index(deviceIndex);
-    for (int i = 0; i < connData_.size(); ++i) {
-	int portBase = 976; // todo: get it from an environment
-	int port = portBase + globalNcclCommCounter * connData_[i].hostCntWithSameIp_ + connData_[i].hostIdxWithSameIp_;
+
+    if (connData_.size() > 0) {
+      // NCCL Unique ID consist of 64 byte magic number (which all participant share)
+      // followed by the socket address of root rank.
+      // With user supplied conn data, the root rank socket address is no longer necessary
+      // but we still need to pass magic. Here wil use groupIdx_ as the magic, because
+      // it is same for all participant
+      uint64_t *magic = (uint64_t*)&ncclID;
+      *magic = groupIdx_;
+      for (int i = 0; i < connData_.size(); ++i) {
+        int portBase = getConnDataPortBase();
+	int port = portBase + groupIdx_ * connData_[i].hostCntWithSameIp_ + connData_[i].hostIdxWithSameIp_;
 	connData_[i].setPort(port);
+      }
     }
 #ifdef NCCL_HAS_COMM_NONBLOCKING
     ncclComms[i] = NCCLComm::create(numRanks, rank, ncclID, connData_, options_->config);

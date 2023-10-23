@@ -473,7 +473,7 @@ class TORCH_API ProcessGroupNCCL : public Backend {
   void abort(c10::optional<std::string> abortReason = c10::nullopt);
 
   // set connection data
-  void setConnData(std::vector<NCCLConnData> connData);
+  void setConnData(int groupIdx, std::vector<NCCLConnData> connData);
 
   std::vector<NCCLConnData> getConnData() const;
 
@@ -596,6 +596,8 @@ class TORCH_API ProcessGroupNCCL : public Backend {
 
   // Desync debug helper
   void logWorkEnd(WorkNCCL& work);
+
+  int getConnDataPortBase() const;
 
  protected:
   static const int64_t kWatchdogThreadSleepMillis;
@@ -753,6 +755,7 @@ class TORCH_API ProcessGroupNCCL : public Backend {
   c10::intrusive_ptr<Backend> uccPG_;
 #endif
 
+  int groupIdx_;
   std::vector<NCCLConnData> connData_;
 };
 

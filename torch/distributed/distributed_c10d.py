@@ -1167,9 +1167,6 @@ def init_process_group(
                 "ProcessGroup initialization."
             )
 
-    if (backend == Backend.NCCL) and _use_nccl_conn_data:
-        nccl_backend = default_pg._get_backend(torch.device("cuda"))
-        nccl_backend.set_conn_data(_get_global_nccl_conn_data(world_size))
 
 def _get_global_ip_list():
     if "KUBERNETES_SERVICE_PORT" in os.environ:
@@ -1266,6 +1263,11 @@ def _new_process_group_helper(
     """
     global _world
 
+
+    # because this function is called by ALL processes in the global group,
+    # the group_count can be used as an unique ID for the group
+    group_id = _world.group_count
+
     if group_name in _world.pg_names.values():
         raise RuntimeError(
             "The specified group name has already been "
@@ -1339,14 +1341,17 @@ def _new_process_group_helper(
 
             backend_class = ProcessGroupNCCL(backend_prefix_store, group_rank, group_size, pg_options)
             backend_type = ProcessGroup.BackendType.NCCL
-            if (not is_default_group) and _use_nccl_conn_data:
-                default_pg = _get_default_group()
-                global_nccl_backend = default_pg._get_backend(torch.device("cuda"))
-                global_conn_data = global_nccl_backend.get_conn_data()
-                current_conn_data = [None] * group_size
-                for i in range(group_size):
-                    current_conn_data[i] = global_conn_data[global_ranks_in_group[i]].copy()
-                backend_class.set_conn_data(current_conn_data)
+            if _use_nccl_conn_data:
+                if is_default_group:
+                    backend_class.set_conn_data(0, _get_global_nccl_conn_data(group_size))
+                else:
+                    default_pg = _get_default_group()
+                    global_nccl_backend = default_pg._get_backend(torch.device("cuda"))
+                    global_conn_data = global_nccl_backend.get_conn_data()
+                    current_conn_data = [None] * group_size
+                    for i in range(group_size):
+                        current_conn_data[i] = global_conn_data[global_ranks_in_group[i]].copy()
+                    backend_class.set_conn_data(group_id, current_conn_data)
         elif backend_str == Backend.UCC and is_ucc_available():
             # TODO: once UCC plugin is fully deprecated, remove
             # is_ucc_available() from above elif-condition and raise
