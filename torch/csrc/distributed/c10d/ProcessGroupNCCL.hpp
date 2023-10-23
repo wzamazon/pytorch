@@ -438,7 +438,7 @@ class TORCH_API ProcessGroupNCCL : public Backend {
   bool isUCCAvailable() const;
 
   // set connection data
-  void setConnData(std::vector<NCCLConnData> connData);
+  void setConnData(int groupIdx, std::vector<NCCLConnData> connData);
 
   std::vector<NCCLConnData> getConnData() const;
 
@@ -561,6 +561,8 @@ class TORCH_API ProcessGroupNCCL : public Backend {
   void destroyNCCLComms(const std::string& devNCCLCommMapKey);
 
   void workCleanupLoop();
+
+  int getConnDataPortBase() const;
 
  protected:
   static const int64_t kWatchdogThreadSleepMillis;
@@ -720,6 +722,7 @@ class TORCH_API ProcessGroupNCCL : public Backend {
   c10::intrusive_ptr<Backend> uccPG_;
 #endif
 
+  int groupIdx_;
   std::vector<NCCLConnData> connData_;
 };
 
