@@ -1028,7 +1028,8 @@ def _new_process_group_helper(
 
     if not group_name:
         group_name = str(_world.group_count)
-        _world.group_count = _world.group_count + 1
+
+    _world.group_count = _world.group_count + 1
 
     if group_name in _world.pg_names.values():
         raise RuntimeError(
