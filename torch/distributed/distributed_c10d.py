@@ -3847,7 +3847,7 @@ def _process_group_name(ranks, use_hashed_name):
             pg_name = hashlib.sha1(bytes(pg_name + "_", "utf-8")).hexdigest()
     else:
         pg_name = str(_world.group_count)
-        _world.group_count += 1
+    _world.group_count += 1
     return pg_name
 
 def _get_backend_from_str(backend: Optional[str] = None) -> Backend:
