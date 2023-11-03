@@ -8,6 +8,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <nccl.h>
@@ -95,6 +96,13 @@ std::string getNcclErrorDetailStr(
   ncclResult_t error,
   c10::optional<std::string> processGroupFailureReason = c10::nullopt);
 
+/* Common socket address storage structure for IPv4/IPv6 */
+union ncclSocketAddress {
+  struct sockaddr sa;
+  struct sockaddr_in sin;
+  struct sockaddr_in6 sin6;
+};
+
 class TORCH_API NCCLConnData {
   public:
     NCCLConnData();
@@ -110,7 +118,7 @@ class TORCH_API NCCLConnData {
     NCCLConnData copy() const;
 
   public:
-    struct sockaddr sockAddr_;
+    union ncclSocketAddress sockAddr_;
 
     int hostCntWithSameIp_;
 
