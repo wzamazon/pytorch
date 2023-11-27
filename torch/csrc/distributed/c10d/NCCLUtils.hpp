@@ -264,6 +264,7 @@ class NCCLComm {
       const std::vector<NCCLConnData>& connData,
       ncclConfig_t& config) {
 
+    auto comm = std::make_shared<NCCLComm>();
     if (connData.size() > 0) {
         assert(connData.size() == numRanks);
         comm->connDataContents_ = connData;
@@ -276,7 +277,6 @@ class NCCLComm {
         config.connData = &(comm->connDataPointers_[0]);
     }
     
-    auto comm = std::make_shared<NCCLComm>();
     if (nccl_use_nonblocking()) {
       config.blocking = 0;
       C10D_NCCL_CHECK_TIMEOUT(
